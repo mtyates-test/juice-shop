@@ -14,7 +14,18 @@ import * as models from '../models/index'
 import { type User } from '../data/types'
 import * as utils from '../lib/utils'
 
+/**
+ * Creates and returns an Express route handler for user login.
+ * Authenticates users via email and password, handles TOTP requirements, and manages login challenges.
+ * @return {Function} Express middleware function that handles login requests
+ */
 export function login () {
+  /**
+   * Handles post-authentication logic including basket creation and token generation.
+   * @param {Object} user - User object containing user data and basket ID
+   * @param {Response} res - Express response object
+   * @param {NextFunction} next - Express next middleware function
+   */
   function afterLogin (user: { data: User, bid: number }, res: Response, next: NextFunction) {
     verifyPostLoginChallenges(user)
     BasketModel.findOrCreate({ where: { UserId: user.data.id } })
@@ -64,6 +75,11 @@ export function login () {
       })
   }
 
+  /**
+   * Verifies and solves pre-login challenges based on submitted credentials.
+   * Checks for successful logins with specific user accounts and passwords.
+   * @param {Request} req - Express request object containing login credentials
+   */
   function verifyPreLoginChallenges (req: Request) {
     challengeUtils.solveIf(challenges.weakPasswordChallenge, () => { return req.body.email === 'admin@' + config.get<string>('application.domain') && req.body.password === 'admin123' })
     challengeUtils.solveIf(challenges.loginSupportChallenge, () => { return req.body.email === 'support@' + config.get<string>('application.domain') && req.body.password === 'J6aVjTgOpRs@?5l!Zkq2AYnCE@RF$P' })
@@ -74,6 +90,11 @@ export function login () {
     challengeUtils.solveIf(challenges.exposedCredentialsChallenge, () => { return req.body.email === 'testing@' + config.get<string>('application.domain') && req.body.password === 'IamUsedForTesting' })
   }
 
+  /**
+   * Verifies and solves post-login challenges based on the authenticated user.
+   * Checks for successful logins with specific user accounts and roles.
+   * @param {Object} user - User object containing authenticated user data
+   */
   function verifyPostLoginChallenges (user: { data: User }) {
     challengeUtils.solveIf(challenges.loginAdminChallenge, () => { return user.data.id === users.admin.id })
     challengeUtils.solveIf(challenges.loginJimChallenge, () => { return user.data.id === users.jim.id })
