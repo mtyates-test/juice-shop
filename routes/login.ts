@@ -14,10 +14,20 @@ import * as models from '../models/index'
 import { type User } from '../data/types'
 import * as utils from '../lib/utils'
 
-// vuln-code-snippet start loginAdminChallenge loginBenderChallenge loginJimChallenge
+/**
+ * Creates and returns an Express route handler for user login.
+ * Authenticates users via email and password, handles TOTP requirements, and manages login challenges.
+ * @return {Function} Express middleware function that handles login requests
+ */
 export function login () {
+  /**
+   * Handles post-authentication logic including basket creation and token generation.
+   * @param {Object} user - User object containing user data and basket ID
+   * @param {Response} res - Express response object
+   * @param {NextFunction} next - Express next middleware function
+   */
   function afterLogin (user: { data: User, bid: number }, res: Response, next: NextFunction) {
-    verifyPostLoginChallenges(user) // vuln-code-snippet hide-line
+    verifyPostLoginChallenges(user)
     BasketModel.findOrCreate({ where: { UserId: user.data.id } })
       .then(([basket]: [BasketModel, boolean]) => {
         const token = security.authorize(user)
@@ -30,9 +40,19 @@ export function login () {
   }
 
   return (req: Request, res: Response, next: NextFunction) => {
-    verifyPreLoginChallenges(req) // vuln-code-snippet hide-line
-    models.sequelize.query(`SELECT * FROM Users WHERE email = '${req.body.email || ''}' AND password = '${security.hash(req.body.password || '')}' AND deletedAt IS NULL`, { model: UserModel, plain: true }) // vuln-code-snippet vuln-line loginAdminChallenge loginBenderChallenge loginJimChallenge
-      .then((authenticatedUser) => { // vuln-code-snippet neutral-line loginAdminChallenge loginBenderChallenge loginJimChallenge
+    verifyPreLoginChallenges(req)
+    // Credentials are passed as bind parameters so that a value like "' OR 1=1--"
+    // is only ever compared as data and can never alter the query structure.
+    if (typeof req.body.email !== 'string' || typeof req.body.password !== 'string') {
+      res.status(401).send(res.__('Invalid email or password.'))
+      return
+    }
+    models.sequelize.query('SELECT * FROM Users WHERE email = $1 AND password = $2 AND deletedAt IS NULL', {
+      bind: [req.body.email, security.hash(req.body.password)],
+      model: UserModel,
+      plain: true
+    })
+      .then((authenticatedUser) => {
         const user = utils.queryResultToJson(authenticatedUser)
         if (user.data?.id && user.data.totpSecret !== '') {
           res.status(401).json({
@@ -45,7 +65,7 @@ export function login () {
             }
           })
         } else if (user.data?.id) {
-          // @ts-expect-error FIXME some properties missing in user - vuln-code-snippet hide-line
+          // @ts-expect-error FIXME some properties missing in user
           afterLogin(user, res, next)
         } else {
           res.status(401).send(res.__('Invalid email or password.'))
@@ -54,8 +74,12 @@ export function login () {
         next(error)
       })
   }
-  // vuln-code-snippet end loginAdminChallenge loginBenderChallenge loginJimChallenge
 
+  /**
+   * Verifies and solves pre-login challenges based on submitted credentials.
+   * Checks for successful logins with specific user accounts and passwords.
+   * @param {Request} req - Express request object containing login credentials
+   */
   function verifyPreLoginChallenges (req: Request) {
     challengeUtils.solveIf(challenges.weakPasswordChallenge, () => { return req.body.email === 'admin@' + config.get<string>('application.domain') && req.body.password === 'admin123' })
     challengeUtils.solveIf(challenges.loginSupportChallenge, () => { return req.body.email === 'support@' + config.get<string>('application.domain') && req.body.password === 'J6aVjTgOpRs@?5l!Zkq2AYnCE@RF$P' })
@@ -66,6 +90,11 @@ export function login () {
     challengeUtils.solveIf(challenges.exposedCredentialsChallenge, () => { return req.body.email === 'testing@' + config.get<string>('application.domain') && req.body.password === 'IamUsedForTesting' })
   }
 
+  /**
+   * Verifies and solves post-login challenges based on the authenticated user.
+   * Checks for successful logins with specific user accounts and roles.
+   * @param {Object} user - User object containing authenticated user data
+   */
   function verifyPostLoginChallenges (user: { data: User }) {
     challengeUtils.solveIf(challenges.loginAdminChallenge, () => { return user.data.id === users.admin.id })
     challengeUtils.solveIf(challenges.loginJimChallenge, () => { return user.data.id === users.jim.id })
