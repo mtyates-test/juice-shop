@@ -24,7 +24,7 @@ describe('/snippets/:challenge', () => {
   })
 
   it('GET code snippet retrieval for challenge with code snippet', () => {
-    return frisby.get(URL + '/snippets/loginAdminChallenge')
+    return frisby.get(URL + '/snippets/resetPasswordJimChallenge')
       .expect('status', 200)
       .expect('jsonTypes', {
         snippet: Joi.string(),
